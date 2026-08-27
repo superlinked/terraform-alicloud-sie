@@ -1,156 +1,201 @@
 # SIE Alibaba Cloud ACK Terraform Module
 
-This module creates the Alibaba Cloud substrate for an SIE cluster. Terraform
-owns the VPC, private-node egress, ACK Pro cluster, CPU and GPU node pools, ACK
-autoscaling, native OSS model/payload storage, per-pool and RRSA RAM roles, ACK
-Secret KMS encryption, SLS control-plane/audit logging, the managed NVIDIA and
-pod-identity add-ons, an optional SSH bastion, and optional repositories in an
-existing ACR Enterprise Edition instance. Deploy the SIE runtime separately
-with the `sie-cluster` Helm chart.
+This module creates a GPU-ready Alibaba Cloud Container Service for Kubernetes
+(ACK) cluster and the supporting infrastructure needed to run
+[SIE](https://github.com/superlinked/sie). After Terraform creates the
+infrastructure, install the SIE runtime with the `sie-cluster` Helm chart.
 
-The default deployment uses Frankfurt (`eu-central-1`) across
-`eu-central-1a` and `eu-central-1c`. It creates one `ecs.g7.xlarge` system pool
-and one on-demand `ecs.gn7i-c8g1.2xlarge` GPU pool with an NVIDIA A10 24 GiB.
-The GPU pool scales from zero to ten nodes and uses a 500 GiB system disk. Both
-pools default to ACK-resolved `AliyunLinux3ContainerOptimized` images.
+By default, the module deploys in Frankfurt (`eu-central-1`) across zones
+`eu-central-1a` and `eu-central-1c`. It creates an `ecs.g7.xlarge` system pool
+and an on-demand `ecs.gn7i-c8g1.2xlarge` GPU pool with one NVIDIA A10 24 GiB
+GPU per node. The GPU pool scales from zero to ten nodes and uses a 500 GiB
+system disk. Both pools use the ACK-resolved
+`AliyunLinux3ContainerOptimized` image family.
 
-## What the module creates
+## What you get
 
-- An explicit VPC with separate system and GPU vSwitches in both zones.
-- An Enhanced Internet NAT gateway, pay-as-you-go EIP, association, and one
-  SNAT entry per vSwitch for private-node egress.
-- A deletion-protected, private-API ACK Pro cluster using Flannel with separate
-  pod and service CIDRs.
-- ACK CSI components and the managed `ack-nvidia-device-plugin` add-on.
-- ACK RRSA plus the managed `ack-pod-identity-webhook`, with an exact
-  namespace/ServiceAccount OIDC trust policy.
-- Autoscaling system and GPU node pools with encrypted ESSD system disks using
-  distinct ECS-trusted RAM roles, plus ACK cluster-autoscaler settings.
-- One private, Block-Public-Access, AES-256 encrypted and versioned OSS bucket:
-  read-only model weights under `models/` and read/write payloads under
-  `payloads/`, with current/noncurrent and multipart lifecycle cleanup.
-- A rotating `Aliyun_AES_256` KMS key for ACK Secret envelope encryption, or an
-  explicitly supplied existing same-region rotating key.
-- One uniquely named SLS project for ACK API audit and Pro control-plane logs.
-- An optional state-owned SSH bastion that exposes only TCP/22 from one exact
-  operator `/32`; the ACK API itself remains private.
-- Optional private repositories inside an existing ACR Enterprise Edition
-  instance.
+- A VPC with separate system and GPU vSwitches in both configured zones.
+- Private-node internet egress through an Enhanced Internet NAT gateway and a
+  pay-as-you-go EIP.
+- A private-API ACK Pro cluster using Flannel, with deletion protection enabled
+  by default.
+- Autoscaling system and GPU node pools with encrypted ESSD system disks,
+  IMDSv2-only metadata access, and separate ECS-trusted RAM roles.
+- ACK CSI components, the managed `ack-nvidia-device-plugin`, RRSA, and the
+  managed `ack-pod-identity-webhook`.
+- A private, encrypted, versioned OSS bucket for model weights under `models/`
+  and large request payloads under `payloads/`.
+- A least-privilege RRSA workload role scoped to the configured SIE namespace
+  and ServiceAccount.
+- KMS envelope encryption for ACK Secrets, with automatic key rotation enabled
+  by default.
+- ACK API audit and control-plane logs in an SLS project.
+- Optional private repositories in an existing ACR Enterprise Edition instance.
+- An optional SSH bastion restricted to one operator `/32`; the ACK API remains
+  private.
 
-The module does not deploy Kubernetes workloads, create an ACR subscription,
-retrieve registry tokens, activate account-wide services, create Alibaba
-service roles, retrieve/store kubeconfig credentials, or purchase a KMS
-subscription.
+Not included: Kubernetes workloads, account-wide service activation and service
+roles, an ACR subscription, registry credentials, kubeconfig storage, or the
+purchase of a KMS Default Key Rotation entitlement.
 
-## Prerequisites
+## Quick start
 
-Before applying, enable ACK, KMS, OSS, and SLS in the selected account and
-region, establish Alibaba's required ACK/NAT/Auto Scaling/OOS service roles,
-and grant the Terraform principal the documented create/pass/use permissions.
-These account-wide prerequisites are not owned by this reusable module.
+### Use the module from the Terraform Registry
 
-Also confirm:
+Configure OSS and SLS Signature V4 in the provider, then call the module with a
+unique cluster name and one of the supported KMS configurations. Pin `version`
+to the value shown in the Registry **Provision Instructions** for reproducible
+deployments.
 
-1. ACK Kubernetes 1.32 or later is available. Managed lifecycle for the
-   `ack-nvidia-device-plugin` add-on requires 1.32 or later.
-2. ACK metadata for the selected Kubernetes version and region offers the
-   `AliyunLinux3ContainerOptimized` x86_64 family. Alibaba Cloud Linux 3
-   Container-Optimized images must be release `20241226` or later for IMDSv2;
-   they use cgroup v2. Every installed ACK component must support IMDSv2-only
-   nodes.
-3. ACK Pro, VPC, vSwitch, NAT gateway, EIP, ECS, OSS, KMS, and SLS quotas are
-   sufficient in `eu-central-1`.
-4. `ecs.g7.xlarge` and `ecs.gn7i-c8g1.2xlarge` are currently available in both
-   configured zones. GPU and spot inventory changes over time.
-5. Terraform 1.14 or newer, Aliyun CLI, `jq`, `kubectl`, and Helm are installed.
-6. Provider credentials use the standard Alicloud provider credential chain.
-   Never put access keys in Terraform files or state.
+```hcl
+terraform {
+  required_version = ">= 1.14"
 
-## Public example
+  required_providers {
+    alicloud = {
+      source  = "aliyun/alicloud"
+      version = "~> 1.289.0"
+    }
+  }
+}
 
-The real public example keeps production lifecycle defaults and exposes only
-caller-owned account inputs:
+provider "alicloud" {
+  region = "eu-central-1"
+
+  sign_version {
+    oss = "v4"
+    sls = "v4"
+  }
+}
+
+module "sie_ack" {
+  source = "superlinked/sie/alicloud"
+  # version = "<version-from-registry-provision-instructions>"
+
+  cluster_name               = "replace-with-a-unique-cluster-name"
+  ack_secret_kms_instance_id = "replace-with-a-same-region-software-kms-instance-id"
+}
+```
+
+Initialize Terraform, review a saved plan, and apply it when it matches your
+intended infrastructure:
+
+```bash
+terraform init
+terraform plan -out=tfplan
+terraform apply tfplan
+```
+
+### Run the included example
+
+The [`examples/dev-gn7i`](examples/dev-gn7i/) configuration deploys the default
+Frankfurt A10 topology. From a checkout of the module source:
 
 ```bash
 cd examples/dev-gn7i
 cp terraform.tfvars.example terraform.tfvars
-# Replace placeholders and select exactly one KMS authority recipe.
+# Set a unique cluster_name and select one KMS configuration below.
 terraform init
-terraform plan
-terraform apply
+terraform plan -out=tfplan
+terraform apply tfplan
 ```
 
-The example uses the module's ordinary system and GPU pool defaults. It does
-not enable the optional bastion, weaken cluster/KMS deletion protection, or
-enable OSS force deletion. Its tfvars template deliberately selects no KMS
-authority, so an unedited copy fails closed at plan.
+Terraform returns a command for obtaining a renewable, 15-minute private
+kubeconfig without writing credentials into state:
 
-## ACK Secret KMS authority
+```bash
+terraform output -raw kubeconfig_command
+```
 
-ACK Secret envelope encryption is enabled by default, and automatic rotation
-is the parity posture. Select exactly one authority before planning:
+Run the printed command from a host with private connectivity to the ACK API,
+save its output in a mode-0600 temporary file, and use that file with
+`kubectl`. Continue with [Connect to ACK and install SIE](#connect-to-ack-and-install-sie).
 
-1. **Existing rotating key:** set `create_ack_secret_kms_key=false` and
-   `ack_secret_kms_key_id=<same-region-key-id>`. The module reads the key and
-   fails unless exactly one key is Enabled, `Aliyun_AES_256`,
-   `ENCRYPT/DECRYPT`, and automatic rotation is Enabled. The caller owns that
-   key's lifecycle and rotation.
-2. **Existing software KMS instance:** leave key creation enabled and set
-   `ack_secret_kms_instance_id=<same-region-instance-id>`, automatic rotation
-   enabled, and an integral 7-365 day interval. The caller provisions and
-   retains the KMS instance; the module creates only the cluster key in it.
-3. **Pre-existing Default Key Rotation entitlement:** leave key creation
-   enabled and set `ack_secret_kms_default_rotation_entitled=true` only after
-   the one-per-account/region paid entitlement is already effective. This path
-   is fixed at 365 days.
+## Prerequisites
 
-The public module does not order, purchase, import, renew, cancel, or otherwise
-manage a KMS subscription or value-added entitlement. The attestation is a
-fail-closed prerequisite, not purchase authorization. Setting
-`ack_secret_kms_automatic_rotation_enabled=false` keeps envelope encryption but
-is an explicit documented non-parity exception.
+Before applying the module:
 
-The input remains an integral day count. The diagnostic
-`ack_secret_encryption.rotation_interval` output uses KMS's canonical seconds
-representation (for example, `31536000s` for 365 days), matching read-after-write
-state and avoiding a perpetual equivalent-duration diff.
+1. Enable ACK, KMS, OSS, and SLS in the target account and region.
+2. Create the Alibaba Cloud service roles required by ACK, NAT Gateway, Auto
+   Scaling, and OOS. The Terraform principal must be able to create resources,
+   create and pass RAM roles, and use the selected KMS resources.
+3. Confirm that ACK Pro and the required VPC, vSwitch, NAT, EIP, ECS, OSS, KMS,
+   and SLS quotas are available.
+4. Confirm current `ecs.g7.xlarge` and `ecs.gn7i-c8g1.2xlarge` inventory in
+   each configured zone. GPU and spot capacity can change independently of
+   Terraform configuration.
+5. Use ACK Kubernetes 1.32 or later. The managed NVIDIA device-plugin lifecycle
+   requires 1.32 or later.
+6. Confirm that ACK offers `AliyunLinux3ContainerOptimized` for the selected
+   Kubernetes version, architecture, and region. For IMDSv2, the resolved
+   Alibaba Cloud Linux 3 Container-Optimized image must be release `20241226`
+   or later, and installed ACK components must support cgroup v2 and IMDSv2.
+7. Install Terraform 1.14 or later, the Aliyun CLI, `jq`, `kubectl`, and Helm.
+8. Configure credentials through the standard Alicloud provider credential
+   chain. Do not put access keys in Terraform files or state.
+9. Ensure the machine used for `kubectl` and Helm can reach the private ACK API,
+   either through an existing private network path or the optional bastion.
 
-## Native OSS and RRSA contract
+The optional ACR integration also requires an existing ACR Enterprise Edition
+instance and working network and DNS connectivity from the cluster.
 
-Terraform exposes `oss://<bucket>/models` and `oss://<bucket>/payloads`.
-The workload role can list/read only `models/`; it can list/read/write/delete
-only `payloads/`. No node or bastion role receives OSS access. ACK projects a
-short-lived OIDC token into pods using the shared `sie-server` ServiceAccount;
-the runtime exchanges it for STS credentials and uses native OSS Signature V4.
-No long-lived Alibaba AccessKey belongs in Terraform, Helm, or a Kubernetes
-Secret.
+## Configure KMS encryption
 
-The managed pod-identity webhook keeps `AutoInjectSTSEnvVars=false`: core RRSA
-role/provider/token injection remains enabled, while the runtime derives and
-pins the official STS endpoint instead of accepting an injected endpoint
-override.
+ACK Secret envelope encryption is enabled by default. Select one of these KMS
+configurations before planning.
 
-Alibaba OSS rejects concurrent bucket-control mutations. Terraform therefore
-applies the private ACL, Block Public Access, AES-256 encryption, and versioning
-in one explicit dependency chain after bucket creation. Keep that ordering when
-changing storage controls.
+### Use an existing rotating key
 
-`oss://` is deliberately not valid for the mutable `sie-config` epoch store:
-OSS PutObject cannot implement its non-empty compare-and-swap contract. Keep
-`sie-config` on the chart's local/PVC store. This does not affect model-cache or
-large-payload support.
+```hcl
+create_ack_secret_kms_key = false
+ack_secret_kms_key_id     = "replace-with-a-same-region-rotating-kms-key-id"
+```
 
-## Helm wiring
+The key must resolve exactly once in the selected region and be Enabled,
+`Aliyun_AES_256`, authorized for `ENCRYPT/DECRYPT`, and configured for automatic
+rotation. The module uses the key but does not manage its lifecycle.
 
-The API server is private-only. Reach it through an existing private network
-path, or explicitly configure the optional module bastion with an existing ECS
-key pair and one canonical globally routable operator `/32`. The module never
-adds a public ACK API endpoint. Terraform returns a renewable Aliyun CLI
-command, not kubeconfig contents; store any retrieved kubeconfig in a protected
-temporary file outside the repository.
+### Create a key in an existing software KMS instance
 
-Install the chart with the ACK overlay and pass only the runtime values derived
-from Terraform outputs:
+```hcl
+ack_secret_kms_instance_id            = "replace-with-a-same-region-software-kms-instance-id"
+ack_secret_kms_rotation_interval_days = 30
+```
+
+Leave `create_ack_secret_kms_key=true`. The module creates the cluster key in
+the supplied instance. The rotation interval must be a whole number from 7
+through 365 days. The software KMS instance remains outside this module.
+
+### Use an active Default Key Rotation entitlement
+
+```hcl
+ack_secret_kms_default_rotation_entitled = true
+```
+
+Leave `create_ack_secret_kms_key=true`. Set this value only after the paid,
+one-per-account-and-region entitlement is active. This option uses a fixed
+365-day rotation interval. The module cannot purchase, renew, cancel, or import
+the entitlement.
+
+Automatic rotation is recommended. Setting
+`ack_secret_kms_automatic_rotation_enabled=false` keeps KMS envelope encryption
+enabled but creates the key without automatic rotation. In that configuration,
+you are responsible for the key's rotation policy.
+
+The `ack_secret_encryption.rotation_interval` output uses the provider's
+canonical seconds format, such as `31536000s` for 365 days.
+
+## Connect to ACK and install SIE
+
+The module never creates a public ACK API endpoint. Use an existing private
+network path or enable the optional bastion with an existing ECS key pair and
+one canonical, globally routable operator `/32`. Retrieve kubeconfig with the
+`kubeconfig_command` output and keep it in a protected temporary file outside
+the module directory.
+
+Install the SIE chart with its ACK values file and the Terraform outputs for
+OSS and RRSA. Version `0.7.2` is the chart release tested with this module
+version:
 
 ```bash
 MODEL_CACHE_URL="$(terraform output -raw model_cache_bucket_url)"
@@ -166,127 +211,150 @@ helm upgrade --install sie-cluster ./sie-cluster \
   --set-string workers.common.clusterCache.url="${MODEL_CACHE_URL}" \
   --set-string payloadStore.url="${PAYLOAD_STORE_URL}" \
   --set-string serviceAccount.annotations."pod-identity\.alibabacloud\.com/role-name"="${RRSA_ROLE_NAME}"
+
+unset MODEL_CACHE_URL PAYLOAD_STORE_URL RRSA_ROLE_NAME
 ```
 
-Unset the shell variables after installation. The ACK overlay leaves Ingress
-disabled because neither this module nor the chart installs an ingress
-controller for ACK. Install and secure a compatible controller before enabling
-Ingress.
+The ACK chart values leave Ingress disabled. Install and secure an
+ACK-compatible ingress controller before enabling Ingress.
 
-## Node image contract
+## Model cache, payload store, and workload identity
 
-Each system/GPU pool has an explicit `image_type`. The safe default and current
-fail-closed allowlist contain only `AliyunLinux3ContainerOptimized`: ACK resolves
-the concrete regional image, so Terraform does not pin a date-stamped image ID.
-This family is the only provider-1.289 option currently verified across the
-module's declared ACK range for x86_64, cgroup v2, IMDSv2, and the mixed
-CPU/A10 topology.
+The shared OSS bucket exposes two separate paths:
 
-Before changing Kubernetes versions or regions, re-check Alibaba's
-[ACK version metadata API](https://www.alibabacloud.com/help/doc-detail/2668189.html),
-[Alibaba Cloud Linux 3 Container-Optimized image contract](https://www.alibabacloud.com/help/en/ack/ack-managed-and-ack-dedicated/user-guide/alibaba-cloud-linux-3-container-optimized-image-overview),
-and [IMDSv2 image floor](https://www.alibabacloud.com/help/en/ack/ack-managed-and-ack-dedicated/security-and-compliance/secure-access-to-ecs-instance-metadata).
+- `oss://<bucket>/models` stores model weights. The workload role can list and
+  read this prefix but cannot modify it.
+- `oss://<bucket>/payloads` stores work items that are too large for the queue.
+  The workload role can list, read, write, and delete this prefix. OSS lifecycle
+  rules remove current and noncurrent payload objects after the configured
+  expiration period and abort incomplete multipart uploads.
 
-Plain `AliyunLinux3` is intentionally rejected because ACK can resolve it to an
-image without cgroup v2. `ContainerOS` is not admitted because the provider's
-accepted value selects the non-GPU family, while the GPU-specific ACK metadata
-value is not accepted by the pinned provider. Other families remain closed
-until the same Kubernetes-version, region, GPU, cgroup-v2, and IMDSv2 contract
-is proven.
+Payload storage is required for requests over 1 MiB, including many image
+requests. Keep `create_model_cache=true` unless you configure another supported
+payload store when installing SIE.
 
-Changing `image_type` on an existing node pool is an ACK node-pool update and
-can roll nodes. Review capacity and disruption before changing it. The
-Terraform resource addresses do not change, and a failed create with no node
-pool in state can be retried from the same state without state surgery.
+ACK projects a short-lived OIDC token into the `sie-server` ServiceAccount.
+The runtime exchanges that token for STS credentials and signs OSS requests
+with region-scoped Signature V4. Node and bastion roles have no OSS permission,
+metadata credential fallback is disabled, and no long-lived Alibaba Cloud
+AccessKey is stored in Terraform, Helm, or a Kubernetes Secret.
 
-## GPU capacity and node identity
+OSS is not suitable for the mutable `sie-config` store because OSS PutObject
+does not provide the required non-empty compare-and-swap operation. Keep
+`sie-config` on the chart's local or PVC-backed store.
 
-The default GPU pool is on-demand because Frankfurt spot inventory is not
-reliable. Spot remains an explicit override and must keep
-`compensate_with_on_demand=true`. Compensation improves the chance of obtaining
-capacity but does not guarantee inventory and can increase cost.
+## Node pools and supported images
 
-The default GPU system disk is 500 GiB. The chart's model cache is a 300 GiB
-`emptyDir` size limit on that root disk, leaving nominal headroom for images,
-logs, the operating system, and kubelet eviction thresholds. The size limit
-does not reserve disk space.
+`AliyunLinux3ContainerOptimized` is the supported `image_type` for both system
+and GPU pools. ACK resolves the concrete regional image; do not replace it with
+a date-stamped image ID. This image family provides the cgroup v2 and IMDSv2
+properties required by the module. Plain `AliyunLinux3` may resolve without
+cgroup v2, and the provider's `ContainerOS` value does not select the required
+GPU image family.
 
-Both system and GPU pools require IMDSv2 tokens and use distinct ECS-trusted
-roles. Existing centrally managed roles can be selected with
-`system_node_ram_role_name` and each GPU pool's `ram_role_name`. These roles
-intentionally receive no OSS policy; the pod-level RRSA workload role is
-separate.
+Changing a node pool's `image_type` can roll its nodes. Check replacement
+capacity and workload disruption before applying the change. If node-pool
+creation fails because inventory or quota is unavailable and no pool was
+created, resolve the capacity issue and retry with the same Terraform state.
+
+The default GPU pool uses on-demand capacity because Frankfurt spot inventory
+can be intermittent. Spot pools are supported, but must keep
+`compensate_with_on_demand=true`. Compensation can improve capacity but does
+not guarantee it and may increase cost.
+
+The default GPU system disk is 500 GiB. The SIE chart's model cache uses a
+300 GiB `emptyDir` size limit on that root disk, leaving nominal space for
+container images, logs, the operating system, and kubelet eviction thresholds.
+The size limit does not reserve disk space.
+
+System and GPU pools use distinct ECS-trusted RAM roles. You can supply an
+existing system role with `system_node_ram_role_name` and per-GPU-pool roles
+with `ram_role_name`; otherwise, the module creates dedicated roles. Node roles
+do not receive OSS permissions because SIE accesses OSS through RRSA.
+
+The Frankfurt A10 topology described above is the module's supported default.
+Always recheck image metadata, quota, and instance inventory before deploying
+it in another account or at a later date.
 
 ## Optional ACR Enterprise repositories
 
-ACR support is disabled by default and never creates a paid instance. Supply an
-existing Enterprise Edition instance ID and its registry hostname to create
-only private namespaces/repositories:
+ACR repository creation is disabled by default and never creates a paid ACR
+instance. To create private repositories in an existing Enterprise Edition
+instance:
 
 ```hcl
 enable_acr_repositories     = true
-acr_enterprise_instance_id = "replace-with-existing-instance-id"
-acr_registry_domain        = "replace-with-registry-hostname"
+acr_enterprise_instance_id = "replace-with-an-existing-acr-ee-instance-id"
+acr_registry_domain        = "replace-with-an-existing-acr-registry-hostname"
 ```
 
-The caller must separately provide working VPC/DNS reachability and Kubernetes
-image-pull credentials. Repository creation alone does not make private images
-pullable.
+The module creates only the configured namespace and repositories. It does not
+create or subscribe to an ACR instance, retrieve registry credentials, or
+configure Kubernetes image-pull secrets. Configure VPC and DNS connectivity and
+image-pull authentication separately.
 
-## Important variables
+## Key variables
 
 | Variable | Default | Purpose |
-|----------|---------|---------|
-| `alicloud_region` | `eu-central-1` | Alibaba Cloud region |
+| --- | --- | --- |
+| `alicloud_region` | `eu-central-1` | Alibaba Cloud region for all resources |
 | `zones` | `eu-central-1a`, `eu-central-1c` | ACK and node-pool zones |
+| `kubernetes_version` | ACK default | Kubernetes 1.32 or later |
 | `deletion_protection` | `true` | Protect the ACK cluster from deletion |
-| `system_node_ram_role_name` | `null` | Existing system-pool role; null creates one |
-| `system_node_pool` | `ecs.g7.xlarge`, AL3 CO, 1-5 | System image and capacity |
-| `gpu_node_pools` | A10, AL3 CO, on-demand, 0-10, 500 GiB | GPU image, capacity, and role override |
-| `create_model_cache` | `true` | Private encrypted/versioned OSS bucket |
-| `model_cache_force_destroy` | `false` | Retain object versions during normal deletion |
-| `ack_secret_encryption_enabled` | `true` | KMS envelope encryption for ACK Secrets |
-| `ack_secret_kms_default_rotation_entitled` | `false` | Attest an existing paid rotation authority |
-| `ack_secret_kms_instance_id` | `null` | Existing software KMS instance authority |
-| `ack_secret_kms_rotation_interval_days` | `365` | Instance key 7-365 days; default entitlement 365 |
-| `audit_logging_enabled` | `true` | ACK audit/control-plane logs in SLS |
-| `bastion_enabled` | `false` | Exact-/32 SSH path to the private API |
-| `enable_acr_repositories` | `false` | Repositories in an existing ACR EE instance |
+| `system_node_pool` | `ecs.g7.xlarge`, 1-5 nodes | System-pool image, capacity, and disk |
+| `gpu_node_pools` | A10, on-demand, 0-10 nodes | GPU-pool image, capacity, disk, and RAM role |
+| `create_model_cache` | `true` | Create the OSS model-cache and payload-store bucket |
+| `model_cache_force_destroy` | `false` | Delete OSS object versions during bucket destruction |
+| `ack_secret_encryption_enabled` | `true` | Encrypt ACK Secrets with KMS |
+| `ack_secret_kms_default_rotation_entitled` | `false` | Confirm an active Default Key Rotation entitlement |
+| `ack_secret_kms_instance_id` | `null` | Existing software KMS instance for a new key |
+| `ack_secret_kms_rotation_interval_days` | `365` | Rotation interval for a software KMS instance key |
+| `audit_logging_enabled` | `true` | Send ACK audit and control-plane logs to SLS |
+| `bastion_enabled` | `false` | Create a restricted SSH path to the private API |
+| `enable_acr_repositories` | `false` | Create repositories in an existing ACR EE instance |
 
-See the published module's `variables.tf` for the complete typed interface and
-validation rules.
+See the Registry **Inputs** tab or `variables.tf` for the complete typed
+interface and validation rules.
 
-## Cleanup and cost warning
+## Outputs
 
-ACK Pro, the system node, NAT gateway, EIP, OSS, SLS, and KMS may incur charges
-even when the GPU pool is at zero. The optional bastion and an existing ACR
-Enterprise instance may add cost. Review current Alibaba Cloud pricing before
-applying.
+| Output | Description |
+| --- | --- |
+| `cluster_id` | ACK cluster ID |
+| `kubeconfig_command` | Aliyun CLI command for a renewable private kubeconfig |
+| `model_cache_bucket_url` | `oss://` URL to pass to `workers.common.clusterCache.url` |
+| `payload_store_url` | `oss://` URL to pass to `payloadStore.url` |
+| `rrsa_workload_role_name` | RAM role for the pod-identity ServiceAccount annotation |
+| `gpu_node_pools` | GPU pool IDs, instance types, capacity, disk, and purchase mode |
+| `ack_secret_encryption` | KMS key ID, creation mode, deletion protection, and rotation settings |
+| `audit_logging` | SLS project, retention, and enabled control-plane components |
+| `bastion_connection` | Sensitive connection details for the optional bastion |
+| `acr_repositories` | Optional ACR repository IDs and endpoints |
 
-Production-safe defaults deliberately protect the cluster and a module-created
-KMS key and retain OSS object versions. A decommission must be a reviewed,
-explicit lifecycle change: first disable the relevant deletion protections,
-apply that posture change, then destroy. A module-created KMS key enters
-`PendingDeletion` for its configured 7-30 day window rather than disappearing
-immediately. Independently inventory the selected account and region after a
-decommission; never describe an empty Terraform state as proof that provider
-resources are absent.
+Additional outputs expose the cluster name and private endpoint, networking
+IDs, node roles, OSS endpoint, and RRSA identity details.
 
-## Standalone publication
+## Costs and cleanup
 
-Stable SIE releases publish this closed projection to
-`superlinked/terraform-alicloud-sie` and tag the same `vX.Y.Z` identity used by
-the module source and Helm chart. The projection retains only the reusable
-module, `examples/dev-gn7i`, tests, public configuration, and the destination's
-license and optional changelog. Account bootstrap, live evidence, Terraform
-state, locks, and internal examples remain private.
+ACK Pro, the system node, NAT gateway, EIP, OSS, SLS, and KMS can incur charges
+even when the GPU pool has scaled to zero. The optional bastion and an existing
+ACR Enterprise Edition instance can add cost. Check current Alibaba Cloud
+pricing for the selected region before applying.
 
-## Validation scope
+The defaults protect the ACK cluster and a module-created KMS key, and retain
+OSS object versions. Before destroying a cluster, update the configuration as
+needed:
 
-The repository runs provider-schema validation and credential-free mocked plan
-tests for the reusable module and public example. One point-in-time Frankfurt
-deployment also proved the full ACK and A10 topology, KMS/SLS resources, and a
-greater-than-1-MiB SDK image request through the RRSA-backed OSS payload
-offload, fetch, cleanup, GPU inference, and 512-dimensional response path. That
-past run does not guarantee future regional inventory, account quota, another
-account's prerequisites, or provider convergence.
+```hcl
+deletion_protection                 = false
+ack_secret_kms_deletion_protection = false
+# Set true only when all versions in the module-created bucket should be deleted.
+model_cache_force_destroy = true
+```
+
+Apply those changes first, then run `terraform destroy`. A module-created KMS
+key enters `PendingDeletion` for its configured 7-30 day window instead of
+disappearing immediately. Existing KMS instances, entitlements, ACR instances,
+and other external prerequisites are not removed by this module. After destroy,
+check the selected account and region for retained resources and pending KMS
+key deletion.

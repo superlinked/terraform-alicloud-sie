@@ -2,12 +2,12 @@
 # exactly one of the three KMS authority recipes below before planning.
 cluster_name = "replace-with-a-unique-cluster-name"
 
-# Optional caller-owned node access and identity inputs.
+# Optional existing node access and identity inputs.
 # ecs_key_name              = "replace-with-an-existing-ecs-key-pair-name"
 # system_node_ram_role_name = "replace-with-an-existing-ecs-trusted-role-name"
 
-# The safe Frankfurt default is cgroup-v2 and IMDSv2 compatible. Keep both
-# pools aligned unless a future module release explicitly admits another type.
+# Only AliyunLinux3ContainerOptimized is currently supported for both pools;
+# the ACK-resolved image provides the required cgroup-v2 and IMDSv2 properties.
 # system_node_image_type = "AliyunLinux3ContainerOptimized"
 # gpu_node_image_type    = "AliyunLinux3ContainerOptimized"
 
@@ -15,7 +15,7 @@ cluster_name = "replace-with-a-unique-cluster-name"
 # create_ack_secret_kms_key = false
 # ack_secret_kms_key_id     = "replace-with-a-same-region-rotating-kms-key-id"
 
-# KMS recipe 2: create the cluster key in a caller-owned software KMS instance.
+# KMS recipe 2: create the cluster key in an existing software KMS instance.
 # ack_secret_kms_instance_id            = "replace-with-a-same-region-software-kms-instance-id"
 # ack_secret_kms_rotation_interval_days = 30
 

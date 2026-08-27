@@ -31,14 +31,14 @@ variable "cluster_name" {
 }
 
 variable "ecs_key_name" {
-  description = "Optional caller-owned ECS key-pair name for node access."
+  description = "Optional existing ECS key-pair name for node access."
   type        = string
   default     = null
   nullable    = true
 }
 
 variable "system_node_ram_role_name" {
-  description = "Optional caller-owned ECS-trusted RAM role name for the system node pool."
+  description = "Optional existing ECS-trusted RAM role name for the system node pool."
   type        = string
   default     = null
   nullable    = true
@@ -51,7 +51,7 @@ variable "system_node_image_type" {
 
   validation {
     condition     = contains(["AliyunLinux3ContainerOptimized"], var.system_node_image_type)
-    error_message = "system_node_image_type must use the reviewed cgroup-v2 family AliyunLinux3ContainerOptimized."
+    error_message = "system_node_image_type must use the supported cgroup-v2 family AliyunLinux3ContainerOptimized."
   }
 }
 
@@ -62,32 +62,32 @@ variable "gpu_node_image_type" {
 
   validation {
     condition     = contains(["AliyunLinux3ContainerOptimized"], var.gpu_node_image_type)
-    error_message = "gpu_node_image_type must use the reviewed cgroup-v2 family AliyunLinux3ContainerOptimized."
+    error_message = "gpu_node_image_type must use the supported cgroup-v2 family AliyunLinux3ContainerOptimized."
   }
 }
 
 variable "create_ack_secret_kms_key" {
-  description = "Create the ACK Secret key in this module. Set false only when ack_secret_kms_key_id identifies a caller-owned rotating key."
+  description = "Create the ACK Secret key in this module. Set false only when ack_secret_kms_key_id identifies an existing rotating key."
   type        = bool
   default     = true
 }
 
 variable "ack_secret_kms_key_id" {
-  description = "Optional caller-owned, same-region, enabled and automatically rotating Aliyun_AES_256 KMS key ID."
+  description = "Optional existing, same-region, enabled and automatically rotating Aliyun_AES_256 KMS key ID."
   type        = string
   default     = null
   nullable    = true
 }
 
 variable "ack_secret_kms_instance_id" {
-  description = "Optional caller-owned software KMS instance ID for a module-created rotating key."
+  description = "Optional existing software KMS instance ID for a module-created rotating key."
   type        = string
   default     = null
   nullable    = true
 }
 
 variable "ack_secret_kms_default_rotation_entitled" {
-  description = "Attest that the paid regional Default Key Rotation entitlement is already effective. This example cannot purchase or renew it."
+  description = "Set true only when the paid regional Default Key Rotation entitlement is already active. This example cannot purchase or renew it."
   type        = bool
   default     = false
 
@@ -104,7 +104,7 @@ variable "ack_secret_kms_default_rotation_entitled" {
         && !var.ack_secret_kms_default_rotation_entitled
       )
     )
-    error_message = "Select exactly one KMS authority: an existing rotating key, a caller-owned software KMS instance, or an already-effective Default Key Rotation entitlement."
+    error_message = "Select exactly one KMS authority: an existing rotating key, an existing software KMS instance, or an active Default Key Rotation entitlement."
   }
 }
 
@@ -115,28 +115,27 @@ variable "ack_secret_kms_rotation_interval_days" {
 }
 
 variable "enable_acr_repositories" {
-  description = "Create private repositories in a caller-owned ACR Enterprise Edition instance."
+  description = "Create private repositories in an existing ACR Enterprise Edition instance."
   type        = bool
   default     = false
 }
 
 variable "acr_enterprise_instance_id" {
-  description = "Optional caller-owned ACR Enterprise Edition instance ID."
+  description = "Optional existing ACR Enterprise Edition instance ID."
   type        = string
   default     = null
   nullable    = true
 }
 
 variable "acr_registry_domain" {
-  description = "Optional caller-owned ACR Enterprise registry hostname without scheme, port, path, or trailing slash."
+  description = "Optional existing ACR Enterprise registry hostname without scheme, port, path, or trailing slash."
   type        = string
   default     = null
   nullable    = true
 }
 
 module "sie_ack" {
-  source  = "superlinked/sie/alicloud"
-  version = "0.7.2"
+  source = "../.."
 
   alicloud_region           = var.alicloud_region
   cluster_name              = var.cluster_name
@@ -190,6 +189,6 @@ output "gpu_node_pools" {
 }
 
 output "acr_repositories" {
-  description = "Optional ACR repository IDs and caller-supplied endpoints."
+  description = "Optional ACR repository IDs and configured endpoints."
   value       = module.sie_ack.acr_repositories
 }

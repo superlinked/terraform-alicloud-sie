@@ -254,7 +254,7 @@ variable "system_node_pool" {
       && var.system_node_pool.max_size > var.system_node_pool.min_size
       && var.system_node_pool.system_disk_size >= 40
     )
-    error_message = "system_node_pool requires at least one instance type, the reviewed cgroup-v2 image_type AliyunLinux3ContainerOptimized, integral min_size >= 1, max_size > min_size, and system_disk_size >= 40."
+    error_message = "system_node_pool requires at least one instance type, the supported cgroup-v2 image_type AliyunLinux3ContainerOptimized, integral min_size >= 1, max_size > min_size, and system_disk_size >= 40."
   }
 }
 
@@ -304,7 +304,7 @@ variable "gpu_node_pools" {
         && (pool.ram_role_name == null || try(can(regex("^[A-Za-z0-9.@_-]{1,64}$", pool.ram_role_name)), false))
       )
     ])
-    error_message = "Each GPU pool needs a valid name and optional RAM role, an instance type, the reviewed cgroup-v2 image_type AliyunLinux3ContainerOptimized, integral max_size > min_size >= 0, an integral disk >= 40 GiB, integral spot capacity percentages, and spot pools must enable on-demand compensation."
+    error_message = "Each GPU pool needs a valid name and optional RAM role, an instance type, the supported cgroup-v2 image_type AliyunLinux3ContainerOptimized, integral max_size > min_size >= 0, an integral disk >= 40 GiB, integral spot capacity percentages, and spot pools must enable on-demand compensation."
   }
 }
 
@@ -425,13 +425,13 @@ variable "ack_secret_kms_key_id" {
 }
 
 variable "ack_secret_kms_automatic_rotation_enabled" {
-  description = "Enable automatic rotation for a module-created ACK Secret key. Keep true for parity; false is an explicit non-parity opt-out that preserves envelope encryption without rotation."
+  description = "Enable automatic rotation for a module-created ACK Secret key. Disabling rotation preserves envelope encryption but requires the key rotation policy to be managed separately."
   type        = bool
   default     = true
 }
 
 variable "ack_secret_kms_default_rotation_entitled" {
-  description = "Explicit attestation that the paid default-key automatic-rotation entitlement already exists in this account and region. This reusable module never purchases it; any entitlement belongs to the caller-owned account bootstrap."
+  description = "Set true only when the paid Default Key Rotation entitlement is already active in this account and region. The module does not purchase or renew the entitlement."
   type        = bool
   default     = false
 }

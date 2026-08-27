@@ -23,7 +23,7 @@ override.tf.json
 .terraform.tfstate.lock.info
 
 # Dependency lock file: provider versions are pinned in versions.tf; the lock file
-# is environment-specific and is stripped by the release sync, so it is not committed
+# is environment-specific, so it is not committed
 .terraform.lock.hcl
 
 # CLI configuration files

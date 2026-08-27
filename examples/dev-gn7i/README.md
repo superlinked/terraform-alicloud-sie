@@ -1,66 +1,62 @@
 # Alibaba Cloud Frankfurt A10 example
 
-This public example consumes the version-matched Alibaba Cloud Registry module
-and creates its ordinary ACK Pro topology in `eu-central-1`: two zones, an
-`ecs.g7.xlarge` system pool, and an on-demand
-`ecs.gn7i-c8g1.2xlarge` A10 24 GiB GPU pool that scales from zero to ten nodes.
-Both pools use the ACK-resolved
-`AliyunLinux3ContainerOptimized` family so Kubernetes gets cgroup v2 while the
-module keeps IMDSv2 required.
+This example deploys an ACK Pro cluster in `eu-central-1` across two zones. It
+uses an `ecs.g7.xlarge` system pool and an on-demand
+`ecs.gn7i-c8g1.2xlarge` GPU pool with one NVIDIA A10 24 GiB GPU per node. The
+GPU pool scales from zero to ten nodes, and both pools use
+`AliyunLinux3ContainerOptimized` with cgroup v2 and IMDSv2.
 
-Read the module [README](../../README.md) before applying. The selected account
-and region must already have ACK, KMS, OSS, and SLS enabled, Alibaba's required
-ACK/NAT/Auto Scaling/OOS service roles established, sufficient quota/current
-ECS inventory, and a Terraform principal that can create and pass the module
-roles. Those caller-owned landing-zone prerequisites are outside this example.
+Read the module [README](../../README.md) before applying. Enable ACK, KMS,
+OSS, and SLS, create Alibaba Cloud's required ACK/NAT/Auto Scaling/OOS service
+roles, confirm quota and ECS inventory, and configure a Terraform principal
+that can create and pass the module's RAM roles.
 
-## Select a KMS authority
+## Select a KMS configuration
 
-The module encrypts ACK Secrets and requires automatic key rotation by default.
-Copy the placeholder values file and choose exactly one recipe:
+The module encrypts ACK Secrets and enables automatic key rotation by default.
+Copy the placeholder values file and select exactly one option:
 
 ```bash
 cp terraform.tfvars.example terraform.tfvars
 ```
 
-1. Use an existing rotating key:
+1. Use an existing rotating KMS key:
 
    ```hcl
    create_ack_secret_kms_key = false
    ack_secret_kms_key_id     = "replace-with-a-same-region-rotating-kms-key-id"
    ```
 
-   The module reads the key and admits it only when exactly one key is Enabled,
-   `Aliyun_AES_256`, `ENCRYPT/DECRYPT`, and automatic rotation is Enabled. The
-   caller retains its lifecycle and rotation.
+   The key must be in the selected region, Enabled, `Aliyun_AES_256`, authorized
+   for `ENCRYPT/DECRYPT`, and configured for automatic rotation.
 
-2. Create the cluster key in a caller-owned software KMS instance:
+2. Create the cluster key in an existing software KMS instance:
 
    ```hcl
    ack_secret_kms_instance_id            = "replace-with-a-same-region-software-kms-instance-id"
    ack_secret_kms_rotation_interval_days = 30
    ```
 
-   The interval must be an integer from 7 through 365 days. The caller
-   provisions and retains the software KMS instance.
+   The interval must be a whole number from 7 through 365 days. This example
+   creates the key but does not manage the software KMS instance.
 
-3. Use an already-effective regional Default Key Rotation entitlement:
+3. Use an active regional Default Key Rotation entitlement:
 
    ```hcl
    ack_secret_kms_default_rotation_entitled = true
    ```
 
-   Set this attestation only after the one-per-account/region paid entitlement
-   exists. This path is fixed at 365 days.
+   Set this only after the paid, one-per-account-and-region entitlement is
+   active. This option uses a fixed 365-day rotation interval.
 
-Neither this example nor the reusable module orders, purchases, imports,
-renews, cancels, or otherwise manages a KMS subscription or value-added
-entitlement. Leaving all three recipes unselected fails closed at plan.
+Neither the example nor the module can purchase, renew, cancel, or import a KMS
+subscription or value-added entitlement. The plan fails until one option is
+selected.
 
 ## Apply
 
-Replace the active cluster-name placeholder and any optional caller-owned
-inputs, then review a saved plan:
+Set a unique `cluster_name` in `terraform.tfvars`, add any optional existing
+resource IDs, and review a saved plan:
 
 ```bash
 terraform init
@@ -68,20 +64,18 @@ terraform plan -out=tfplan
 terraform apply tfplan
 ```
 
-The example deliberately keeps the module's production lifecycle defaults:
-ACK and module-created KMS deletion protection remain enabled, the KMS
-pending-deletion window remains 30 days, and OSS force deletion remains off.
-It does not create a public ACK API endpoint or enable the optional SSH
-bastion.
+The defaults keep ACK and module-created KMS deletion protection enabled, use a
+30-day KMS pending-deletion window, and retain OSS object versions. The example
+does not create a public ACK API endpoint or enable the optional SSH bastion.
 
-The system and GPU image inputs default to
-`AliyunLinux3ContainerOptimized`. The example rejects plain `AliyunLinux3` and
-other unreviewed families; do not substitute a date-stamped image ID. ACK owns
-regional image resolution. Changing an existing pool's image type can roll its
-nodes, so review disruption and capacity before applying such a change.
+Both node pools must use `AliyunLinux3ContainerOptimized`. Do not substitute
+plain `AliyunLinux3`, `ContainerOS`, or a date-stamped image ID. ACK selects the
+concrete regional image. Changing the image type of an existing node pool can
+roll nodes, so check capacity and disruption before applying the change.
 
-`ecs_key_name` and `system_node_ram_role_name` are optional caller-owned
-inputs. If ACR repositories are needed, set all three existing-instance inputs:
+`ecs_key_name` and `system_node_ram_role_name` can refer to existing resources.
+To create private repositories in an existing ACR Enterprise Edition instance,
+set all three ACR inputs:
 
 ```hcl
 enable_acr_repositories     = true
@@ -89,26 +83,19 @@ acr_enterprise_instance_id = "replace-with-an-existing-acr-ee-instance-id"
 acr_registry_domain        = "replace-with-an-existing-acr-registry-hostname"
 ```
 
-This creates repositories only. It does not create an ACR Enterprise Edition
-subscription, discover registry credentials, or configure Kubernetes image
-pull access.
+This creates only the namespace and repositories. Configure the ACR
+subscription, network and DNS connectivity, registry credentials, and
+Kubernetes image-pull access separately.
 
 ## Install SIE
 
-Reach the private ACK API through a caller-managed private network path. The
-`kubeconfig_command` output retrieves a renewable short-lived kubeconfig; keep
-the resulting file mode 0600 outside the repository and remove it after use.
+Reach the private ACK API through an existing private network path. The
+`kubeconfig_command` output retrieves a renewable, short-lived kubeconfig. Save
+it in a mode-0600 temporary file outside the repository and remove it after use.
 
-Install the Helm chart with `values-ack.yaml`, then pass:
-
-- `model_cache_bucket_url` to `workers.common.clusterCache.url`;
-- `payload_store_url` to `payloadStore.url`; and
-- `rrsa_workload_role_name` to the
-  `pod-identity.alibabacloud.com/role-name` ServiceAccount annotation.
-
-Pull the chart at the same release version as this module, unpack it so the
-packaged ACK overlay is available, and install it with the Terraform-derived
-OSS and RRSA values:
+Install the Helm chart with `values-ack.yaml`, then pass the Terraform outputs
+for the model cache, payload store, and RRSA workload role. Version `0.7.2` is
+the chart release tested with this module version:
 
 ```bash
 MODEL_CACHE_URL="$(terraform output -raw model_cache_bucket_url)"
@@ -128,24 +115,33 @@ helm upgrade --install sie-cluster ./sie-cluster \
 unset MODEL_CACHE_URL PAYLOAD_STORE_URL RRSA_ROLE_NAME
 ```
 
-The native OSS storage paths use RRSA short-lived credentials and OSS Signature
-V4. The workload role can read `models/`, and read/write/delete `payloads/`.
-Node roles receive no OSS policy. Keep mutable `sie-config` data on its
-local/PVC store because OSS does not satisfy the required compare-and-swap
-contract.
+The native OSS paths use Signature V4 and short-lived RRSA credentials. The
+workload role can read `models/` and can read, write, and delete `payloads/`.
+Payload storage is required for requests over 1 MiB. Node roles have no OSS
+permission, and no long-lived AccessKey is stored in Terraform or Kubernetes.
 
-Ingress stays disabled until the caller installs and secures an ACK-compatible
-controller. The default A10 disk is 500 GiB, leaving nominal headroom over the
-chart's 300 GiB node-backed cache for images, logs, the operating system, and
-kubelet eviction thresholds.
+Keep mutable `sie-config` data on its local or PVC-backed store because OSS
+does not provide the required compare-and-swap operation. Ingress remains
+disabled until you install and secure an ACK-compatible ingress controller.
 
-## Cleanup and costs
+The default A10 disk is 500 GiB, leaving nominal space beyond the chart's
+300 GiB node-backed model-cache limit for images, logs, the operating system,
+and kubelet eviction thresholds. That limit does not reserve disk space.
+
+## Costs and cleanup
 
 ACK Pro, the system node, NAT gateway, EIP, OSS, SLS, and KMS can incur charges
-while the GPU pool is at zero. Review current pricing before applying.
+while the GPU pool is at zero. Check current pricing before applying.
 
-Decommissioning requires an explicit reviewed lifecycle change because the
-safe defaults protect the ACK cluster and module-created KMS key and retain OSS
-versions. A deleted module-created key can remain in `PendingDeletion` for its
-configured window. Independently inventory the provider after destroy rather
-than treating an empty Terraform state as proof of absence.
+To remove the example, first set `deletion_protection=false` and
+`ack_secret_kms_deletion_protection=false`, then apply those changes. Set
+`model_cache_force_destroy=true` as well if the module-created OSS bucket and
+all object versions should be deleted. After the update, run:
+
+```bash
+terraform destroy
+```
+
+A module-created KMS key remains in `PendingDeletion` for its configured
+window. After destroy, check the selected account and region for retained
+resources and pending KMS key deletion.
