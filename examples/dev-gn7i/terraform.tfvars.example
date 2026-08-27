@@ -1,0 +1,29 @@
+# Copy to terraform.tfvars, replace every selected placeholder, and choose
+# exactly one of the three KMS authority recipes below before planning.
+cluster_name = "replace-with-a-unique-cluster-name"
+
+# Optional caller-owned node access and identity inputs.
+# ecs_key_name              = "replace-with-an-existing-ecs-key-pair-name"
+# system_node_ram_role_name = "replace-with-an-existing-ecs-trusted-role-name"
+
+# The safe Frankfurt default is cgroup-v2 and IMDSv2 compatible. Keep both
+# pools aligned unless a future module release explicitly admits another type.
+# system_node_image_type = "AliyunLinux3ContainerOptimized"
+# gpu_node_image_type    = "AliyunLinux3ContainerOptimized"
+
+# KMS recipe 1: use an existing rotating key. Uncomment both lines.
+# create_ack_secret_kms_key = false
+# ack_secret_kms_key_id     = "replace-with-a-same-region-rotating-kms-key-id"
+
+# KMS recipe 2: create the cluster key in a caller-owned software KMS instance.
+# ack_secret_kms_instance_id            = "replace-with-a-same-region-software-kms-instance-id"
+# ack_secret_kms_rotation_interval_days = 30
+
+# KMS recipe 3: create the cluster key after a paid Default Key Rotation
+# entitlement is already effective in this account and region.
+# ack_secret_kms_default_rotation_entitled = true
+
+# Optional repositories in an existing ACR Enterprise Edition instance.
+# enable_acr_repositories     = true
+# acr_enterprise_instance_id = "replace-with-an-existing-acr-ee-instance-id"
+# acr_registry_domain        = "replace-with-an-existing-acr-registry-hostname"
