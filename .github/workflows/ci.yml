@@ -56,3 +56,9 @@ jobs:
 
       - name: Run Terraform tests
         run: terraform test -no-color
+
+      - name: Initialize Terraform example
+        run: terraform -chdir=examples/dev-gn7i init -backend=false -input=false -no-color
+
+      - name: Run Terraform example tests
+        run: terraform -chdir=examples/dev-gn7i test -no-color
