@@ -193,16 +193,16 @@ one canonical, globally routable operator `/32`. Retrieve kubeconfig with the
 `kubeconfig_command` output and keep it in a protected temporary file outside
 the module directory.
 
-Install the SIE chart with its ACK values file and the Terraform outputs for
-OSS and RRSA. Version `0.7.2` is the chart release tested with this module
-version:
+Install SIE chart `0.8.2` with its ACK values file and the Terraform outputs
+for OSS and RRSA. Its `v0.8.2` application version selects the matching SIE
+runtime images. The Terraform module version is independent of the chart version.
 
 ```bash
 MODEL_CACHE_URL="$(terraform output -raw model_cache_bucket_url)"
 PAYLOAD_STORE_URL="$(terraform output -raw payload_store_url)"
 RRSA_ROLE_NAME="$(terraform output -raw rrsa_workload_role_name)"
 
-helm pull oci://ghcr.io/superlinked/charts/sie-cluster --version 0.7.2 --untar
+helm pull oci://ghcr.io/superlinked/charts/sie-cluster --version 0.8.2 --untar
 helm upgrade --install sie-cluster ./sie-cluster \
   --namespace sie \
   --create-namespace \
@@ -214,6 +214,10 @@ helm upgrade --install sie-cluster ./sie-cluster \
 
 unset MODEL_CACHE_URL PAYLOAD_STORE_URL RRSA_ROLE_NAME
 ```
+
+When upgrading an existing installation with custom model profiles, review the
+[SIE 0.8.0 breaking changes](https://github.com/superlinked/sie/releases/tag/v0.8.0)
+for adapter options and launch arguments before deploying SIE 0.8.2.
 
 The ACK chart values leave Ingress disabled. Install and secure an
 ACK-compatible ingress controller before enabling Ingress.
