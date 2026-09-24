@@ -93,16 +93,16 @@ Reach the private ACK API through an existing private network path. The
 `kubeconfig_command` output retrieves a renewable, short-lived kubeconfig. Save
 it in a mode-0600 temporary file outside the repository and remove it after use.
 
-Install the Helm chart with `values-ack.yaml`, then pass the Terraform outputs
-for the model cache, payload store, and RRSA workload role. Version `0.7.2` is
-the chart release tested with this module version:
+Install SIE chart `0.8.2` with `values-ack.yaml`, then pass the Terraform outputs
+for the model cache, payload store, and RRSA workload role. Its `v0.8.2`
+application version selects the matching SIE runtime images:
 
 ```bash
 MODEL_CACHE_URL="$(terraform output -raw model_cache_bucket_url)"
 PAYLOAD_STORE_URL="$(terraform output -raw payload_store_url)"
 RRSA_ROLE_NAME="$(terraform output -raw rrsa_workload_role_name)"
 
-helm pull oci://ghcr.io/superlinked/charts/sie-cluster --version 0.7.2 --untar
+helm pull oci://ghcr.io/superlinked/charts/sie-cluster --version 0.8.2 --untar
 helm upgrade --install sie-cluster ./sie-cluster \
   --namespace sie \
   --create-namespace \
@@ -114,6 +114,10 @@ helm upgrade --install sie-cluster ./sie-cluster \
 
 unset MODEL_CACHE_URL PAYLOAD_STORE_URL RRSA_ROLE_NAME
 ```
+
+For existing installations with custom model profiles, review the
+[SIE 0.8.0 breaking changes](https://github.com/superlinked/sie/releases/tag/v0.8.0)
+for adapter options and launch arguments before upgrading.
 
 The native OSS paths use Signature V4 and short-lived RRSA credentials. The
 workload role can read `models/` and can read, write, and delete `payloads/`.
