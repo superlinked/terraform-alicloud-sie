@@ -93,8 +93,8 @@ Reach the private ACK API through an existing private network path. The
 `kubeconfig_command` output retrieves a renewable, short-lived kubeconfig. Save
 it in a mode-0600 temporary file outside the repository and remove it after use.
 
-Install SIE chart `0.8.2` with `values-ack.yaml`, then pass the Terraform outputs
-for the model cache, payload store, and RRSA workload role. Its `v0.8.2`
+Install SIE chart `0.8.3` with `values-ack.yaml`, then pass the Terraform outputs
+for the model cache, payload store, and RRSA workload role. Its `v0.8.3`
 application version selects the matching SIE runtime images:
 
 ```bash
@@ -102,7 +102,7 @@ MODEL_CACHE_URL="$(terraform output -raw model_cache_bucket_url)"
 PAYLOAD_STORE_URL="$(terraform output -raw payload_store_url)"
 RRSA_ROLE_NAME="$(terraform output -raw rrsa_workload_role_name)"
 
-helm pull oci://ghcr.io/superlinked/charts/sie-cluster --version 0.8.2 --untar
+helm pull oci://ghcr.io/superlinked/charts/sie-cluster --version 0.8.3 --untar
 helm upgrade --install sie-cluster ./sie-cluster \
   --namespace sie \
   --create-namespace \
