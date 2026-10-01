@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.5](https://github.com/superlinked/terraform-alicloud-sie/compare/v0.7.4...v0.7.5) (2026-10-01)
+
+
+### Bug Fixes
+
+* use SIE 0.9.0 in ACK installation examples ([#5](https://github.com/superlinked/terraform-alicloud-sie/issues/5)) ([b8cdbb4](https://github.com/superlinked/terraform-alicloud-sie/commit/b8cdbb4586a4f8b715a13c23cba56e07254d80c3))
+
 ## [0.7.4](https://github.com/superlinked/terraform-alicloud-sie/compare/v0.7.3...v0.7.4) (2026-09-28)
 
 
