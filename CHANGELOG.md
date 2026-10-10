@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.6](https://github.com/superlinked/terraform-alicloud-sie/compare/v0.7.5...v0.7.6) (2026-10-10)
+
+
+### Bug Fixes
+
+* pin ACK deployment examples to SIE 0.10.0 ([#8](https://github.com/superlinked/terraform-alicloud-sie/issues/8)) ([6f66d4e](https://github.com/superlinked/terraform-alicloud-sie/commit/6f66d4edc0cf857c32e7f0f0a15667250f3b71ea))
+
 ## [0.7.5](https://github.com/superlinked/terraform-alicloud-sie/compare/v0.7.4...v0.7.5) (2026-10-01)
 
 
