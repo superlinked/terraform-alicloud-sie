@@ -193,21 +193,29 @@ one canonical, globally routable operator `/32`. Retrieve kubeconfig with the
 `kubeconfig_command` output and keep it in a protected temporary file outside
 the module directory.
 
-Install SIE chart `0.10.0` with its ACK values file and the Terraform outputs
-for OSS and RRSA. Its `v0.10.0` application version selects the matching SIE
-runtime images. The Terraform module version is independent of the chart version.
+Select the latest stable SIE chart once and install it with its bundled ACK
+values and the Terraform outputs for OSS and RRSA. The chart's `appVersion`
+selects matching, versioned runtime images. The Terraform module and SIE runtime
+are versioned independently: a new SIE release does not require a new module
+release. For production or an upgrade, add `--version <reviewed-chart-version>`
+to `helm pull` below, replacing the placeholder with the chart version you
+reviewed. Do not use `--version latest`.
 
 ```bash
+set -euo pipefail
 MODEL_CACHE_URL="$(terraform output -raw model_cache_bucket_url)"
 PAYLOAD_STORE_URL="$(terraform output -raw payload_store_url)"
 RRSA_ROLE_NAME="$(terraform output -raw rrsa_workload_role_name)"
 
-helm pull oci://ghcr.io/superlinked/charts/sie-cluster --version 0.10.0 \
-  --untar --untardir ./sie-cluster-0.10.0
-helm upgrade --install sie-cluster ./sie-cluster-0.10.0/sie-cluster \
+SIE_CHART_ROOT="$(mktemp -d)"
+helm pull oci://ghcr.io/superlinked/charts/sie-cluster \
+  --untar --untardir "$SIE_CHART_ROOT"
+SIE_CHART_DIR="$SIE_CHART_ROOT/sie-cluster"
+helm show chart "$SIE_CHART_DIR"
+helm upgrade --install sie-cluster "$SIE_CHART_DIR" \
   --namespace sie \
   --create-namespace \
-  --values ./sie-cluster-0.10.0/sie-cluster/values-ack.yaml \
+  --values "$SIE_CHART_DIR/values-ack.yaml" \
   --set workers.common.clusterCache.enabled=true \
   --set-string workers.common.clusterCache.url="${MODEL_CACHE_URL}" \
   --set-string payloadStore.url="${PAYLOAD_STORE_URL}" \
@@ -216,10 +224,16 @@ helm upgrade --install sie-cluster ./sie-cluster-0.10.0/sie-cluster \
 unset MODEL_CACHE_URL PAYLOAD_STORE_URL RRSA_ROLE_NAME
 ```
 
+Keep the extracted chart directory and record its `Chart.yaml` metadata. Its
+bundled README and values are authoritative for this installation; the
+[chart documentation](https://github.com/superlinked/sie/blob/main/deploy/helm/sie-cluster/README.md)
+on `main` describes ongoing development. Reuse the selected artifact rather
+than resolving latest again for another step of the same rollout.
+
 The ACK chart values leave Ingress disabled. Install and secure an
 ACK-compatible ingress controller before enabling Ingress, and enable it
 together with gateway authentication and TLS, as described in the chart's
-[Ingress section](https://github.com/superlinked/sie/blob/v0.10.0/deploy/helm/sie-cluster/README.md#authentication-and-tls-requirements).
+[Ingress section](https://github.com/superlinked/sie/blob/main/deploy/helm/sie-cluster/README.md#authentication-and-tls-requirements).
 
 To reach the gateway from your machine without an Ingress, forward a local
 port to its `ClusterIP` Service:
@@ -228,11 +242,21 @@ port to its `ClusterIP` Service:
 kubectl -n sie port-forward svc/sie-gateway 8080:8080
 ```
 
+### Upgrading SIE
+
+Review the [SIE release notes](https://github.com/superlinked/sie/releases) for
+every version between the installed release and your selected chart. Pull that
+reviewed version into a fresh directory as above, then install that local
+artifact with all your existing explicit values, authentication, TLS, OSS,
+RRSA, repository overrides, and local overlays. Do not blindly re-run the
+latest-selection step for a production upgrade. The historical migration
+notices below still apply when crossing those versions.
+
 ### Upgrading to SIE 0.10.0
 
 Chart `0.10.0` requires no new values, and its ACK values file is unchanged
-from `0.9.0`. To upgrade a `0.9.0` release, re-run the commands above, which
-pull the new chart into `./sie-cluster-0.10.0`. The
+from `0.9.0`. For that specific historical upgrade, select chart `0.10.0`
+with `helm pull --version 0.10.0`, then install the selected local artifact. The
 [SIE 0.10.0 release notes](https://github.com/superlinked/sie/releases/tag/v0.10.0)
 list one breaking change, in the server: a LoRA whose PEFT config sets `bias`
 to `"all"` or `"lora_only"` no longer loads. A model profile that declares one
@@ -252,22 +276,22 @@ above:
 
 - **Pull into a new directory.** `helm pull --untar` does not overwrite an
   existing `./sie-cluster` directory, so an earlier chart left there would be
-  installed again. The commands above pull into the versioned
-  `./sie-cluster-0.10.0` directory.
+  installed again. The commands above use `mktemp -d` to select a fresh
+  directory for each pull.
 - **NATS authentication is on by default.** The upgrade restarts NATS and rolls
   sie-config, the gateway, and the workers. With the default memory-backed work
   queues, queued and in-flight work is lost, as on any NATS restart. A gateway,
   sie-config, or worker pod that has not been replaced yet has no credentials,
   and NATS refuses it: requests can fail with `503`, and workers that have not
   restarted take no work until they do. To avoid that gap, run the
-  `helm upgrade` command above twice: first with
+  `helm upgrade` command above twice, using the same selected chart: first with
   `--set nats.auth.allowAnonymous=true` added, then, once every pod has
   restarted, with `--set nats.auth.allowAnonymous=false`. Between the two
   steps NATS also accepts anonymous clients, with unrestricted permissions, and
   the chart ships no NetworkPolicy for the NATS pods, so allow only trusted
   workloads to reach NATS. The first step still restarts NATS, so the two steps
   do not prevent the loss of queued and in-flight work. See the chart's
-  [NATS authentication section](https://github.com/superlinked/sie/blob/v0.10.0/deploy/helm/sie-cluster/README.md#nats-authentication).
+  [NATS authentication section](https://github.com/superlinked/sie/blob/main/deploy/helm/sie-cluster/README.md#nats-authentication).
 - **Pass values explicitly.** `helm upgrade --reuse-values` now fails to
   render. Re-run the full command above, which passes the values file with
   `--values`, or use `--reset-then-reuse-values` (Helm 3.14 or later).
@@ -297,7 +321,7 @@ above:
   `gateway.auth.adminTokenSecretName` names a separate Secret. Run the
   sie-config, gateway, and worker sidecar images of the same release. See the
   chart's
-  [sie-config tokens section](https://github.com/superlinked/sie/blob/v0.10.0/deploy/helm/sie-cluster/README.md#sie-config-tokens).
+  [sie-config tokens section](https://github.com/superlinked/sie/blob/main/deploy/helm/sie-cluster/README.md#sie-config-tokens).
 
 For existing installations with custom model profiles, also review the
 [SIE 0.8.0 breaking changes](https://github.com/superlinked/sie/releases/tag/v0.8.0)

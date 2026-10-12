@@ -93,21 +93,29 @@ Reach the private ACK API through an existing private network path. The
 `kubeconfig_command` output retrieves a renewable, short-lived kubeconfig. Save
 it in a mode-0600 temporary file outside the repository and remove it after use.
 
-Install SIE chart `0.10.0` with `values-ack.yaml`, then pass the Terraform outputs
-for the model cache, payload store, and RRSA workload role. Its `v0.10.0`
-application version selects the matching SIE runtime images:
+Select the latest stable SIE chart once and install it with its bundled
+`values-ack.yaml` and the Terraform outputs for model cache, payload store,
+and RRSA. Its `appVersion` selects matching, versioned runtime images. The
+Terraform module and SIE runtime versions are independent. For production or
+an upgrade, add `--version <reviewed-chart-version>` to `helm pull` below after
+replacing the placeholder. Keep the extracted directory and record its chart
+metadata; its bundled README and values describe the selected release.
 
 ```bash
+set -euo pipefail
 MODEL_CACHE_URL="$(terraform output -raw model_cache_bucket_url)"
 PAYLOAD_STORE_URL="$(terraform output -raw payload_store_url)"
 RRSA_ROLE_NAME="$(terraform output -raw rrsa_workload_role_name)"
 
-helm pull oci://ghcr.io/superlinked/charts/sie-cluster --version 0.10.0 \
-  --untar --untardir ./sie-cluster-0.10.0
-helm upgrade --install sie-cluster ./sie-cluster-0.10.0/sie-cluster \
+SIE_CHART_ROOT="$(mktemp -d)"
+helm pull oci://ghcr.io/superlinked/charts/sie-cluster \
+  --untar --untardir "$SIE_CHART_ROOT"
+SIE_CHART_DIR="$SIE_CHART_ROOT/sie-cluster"
+helm show chart "$SIE_CHART_DIR"
+helm upgrade --install sie-cluster "$SIE_CHART_DIR" \
   --namespace sie \
   --create-namespace \
-  --values ./sie-cluster-0.10.0/sie-cluster/values-ack.yaml \
+  --values "$SIE_CHART_DIR/values-ack.yaml" \
   --set workers.common.clusterCache.enabled=true \
   --set-string workers.common.clusterCache.url="${MODEL_CACHE_URL}" \
   --set-string payloadStore.url="${PAYLOAD_STORE_URL}" \
@@ -117,7 +125,7 @@ unset MODEL_CACHE_URL PAYLOAD_STORE_URL RRSA_ROLE_NAME
 ```
 
 Before upgrading a release installed from an earlier chart, follow
-[Upgrading to SIE 0.10.0](../../README.md#upgrading-to-sie-0100) in the module
+[Upgrading SIE](../../README.md#upgrading-sie) in the module
 README. Chart `0.9.0` had breaking changes for existing releases: NATS
 authentication is on by default, gateway exposure needs authentication and
 TLS, and `helm upgrade --reuse-values` fails to render. A release older than
