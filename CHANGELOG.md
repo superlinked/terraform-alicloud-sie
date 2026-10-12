@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.7](https://github.com/superlinked/terraform-alicloud-sie/compare/v0.7.6...v0.7.7) (2026-10-12)
+
+
+### Documentation
+
+* decouple SIE installation guides from module releases ([#10](https://github.com/superlinked/terraform-alicloud-sie/issues/10)) ([a66cf80](https://github.com/superlinked/terraform-alicloud-sie/commit/a66cf802788defec3c8d8891dd60011cd7f7497f))
+* simplify Helm installs to direct OCI ([79f01e5](https://github.com/superlinked/terraform-alicloud-sie/commit/79f01e5f5eebd90191b77ecb0ed6b622612986f8))
+
 ## [0.7.6](https://github.com/superlinked/terraform-alicloud-sie/compare/v0.7.5...v0.7.6) (2026-10-10)
 
 
